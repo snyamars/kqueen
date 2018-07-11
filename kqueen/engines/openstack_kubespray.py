@@ -98,9 +98,18 @@ class OpenstackKubesprayEngine(BaseEngine):
                 "label": "Floating network name or id",
                 "default": "public",
             },
-            "dns_nameservers": {
+            "docker_bip_network": {
                 "type": "text",
                 "order": 70,
+                "label": "Supply a specific IP address and netmask for the docker0 bridge, using standard CIDR notation",
+                "default": "10.13.0.1/16",
+                "validators": {
+                    "cidr": True,
+                },
+            },
+            "dns_nameservers": {
+                "type": "text",
+                "order": 80,
                 "label": "Comma separated list of nameservers",
                 "default": config.KS_DEFAULT_NAMESERVERS,
                 "validators": {
@@ -109,7 +118,7 @@ class OpenstackKubesprayEngine(BaseEngine):
             },
             "availability_zone": {
                 "type": "text",
-                "order": 80,
+                "order": 90,
                 "label": "Availability zone",
                 "default": "nova",
             },
@@ -612,6 +621,7 @@ class OpenStack:
 
         self.meta["master_count"] = self.cluster.metadata["master_count"]
         self.meta["slave_count"] = self.cluster.metadata["slave_count"]
+        self.meta["docker_bip_network"] = self.cluster.metadata["docker_bip_network"]
 
         self.meta["dns"] = [validate_ip(ip) for ip in
                             self.cluster.metadata.get("dns_nameservers", []).split(",")]
@@ -734,6 +744,7 @@ class OpenStack:
         return resources
 
     def _get_userdata(self):
+        docker_bip = {"bip": self.meta["docker_bip_network"]}
         userdata = {
             "manage_etc_hosts": True,
             "package_update": True,
@@ -741,12 +752,11 @@ class OpenStack:
             "ssh_authorized_keys": [self.extra_ssh_key],
             "write_files": [
                 {
-                    "content": '{"bip": "10.13.0.1/16"}',
+                    "content": json.dumps(docker_bip),
                     "path": "/etc/docker/daemon.json",
                 },
             ],
         }
-        # TODO: bip network should not be hardcoded
         return "#cloud-config\n" + yaml.dump(userdata)
 
     def _boot_servers(self, *, name, servers_range, image, flavor, network,
